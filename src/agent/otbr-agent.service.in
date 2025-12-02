@@ -7,6 +7,7 @@ After=dbus.socket
 [Service]
 EnvironmentFile=-@CMAKE_INSTALL_FULL_SYSCONFDIR@/default/otbr-agent
 @EXEC_START_PRE@ExecStart=@CMAKE_INSTALL_FULL_SBINDIR@/otbr-agent $OTBR_AGENT_OPTS
+ExecStartPost=bash -c "sleep 1 && chmod 777 /var/run/openthread-wpan0.sock"
 KillMode=mixed
 Restart=on-failure
 RestartSec=5
