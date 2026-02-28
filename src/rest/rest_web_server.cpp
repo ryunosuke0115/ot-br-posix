@@ -1007,7 +1007,7 @@ void RestWebServer::ApiTopologyHandler(const Request &aRequest, Response &aRespo
     // ここで呼ぶか、バックグラウンドで定期実行するかは運用次第です。
     // mDiagnosticManager->UpdateCache();
 
-    std::string body = mDiagnosticManager->GetTopologyJson();
+    std::string body = mDiagnosticManager->GetDiagnosticData();
 
     aResponse.status = StatusCode::OK_200; //
     aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON); //
