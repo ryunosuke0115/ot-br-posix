@@ -9,7 +9,7 @@ namespace otbr {
 namespace rest {
 
 // 取得する TLV Type
-static const uint8_t kTlvTypes[] = {OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS};
+static const uint8_t kTlvTypes[] = {1};
 
 DiagnosticManager::DiagnosticManager(otbr::Host::RcpHost &aHost)
     : mHost(aHost)
