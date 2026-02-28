@@ -31,6 +31,8 @@
 
 #include "rest/rest_web_server.hpp"
 
+#include "rest/diagnostic_manager.hpp"
+
 #include <chrono>
 
 #include <arpa/inet.h>
@@ -64,6 +66,8 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT "/networks/current"
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_COMMISSION "/networks/commission"
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_PREFIX "/networks/current/prefix"
+
+#define OT_REST_ROUTE_TOPOLOGY "/api/topology"
 
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
@@ -133,6 +137,8 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Delete(OT_REST_RESOURCE_PATH_NODE_COMMISSIONER_JOINER, MakeHandler(&RestWebServer::CommissionerJoiner));
     mServer.Options(OT_REST_RESOURCE_PATH_NODE_COMMISSIONER_JOINER, MakeHandler(&RestWebServer::CommissionerJoiner));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_COPROCESSOR_VERSION, MakeHandler(&RestWebServer::CoprocessorVersion));
+    mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
+    mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
 }
 
 RestWebServer::~RestWebServer(void)
@@ -990,6 +996,21 @@ void RestWebServer::CoprocessorVersion(const Request &aRequest, Response &aRespo
     {
         ErrorHandler(aResponse, StatusCode::MethodNotAllowed_405);
     }
+}
+
+void RestWebServer::ApiTopologyHandler(const Request &aRequest, Response &aResponse) const
+{
+    OT_UNUSED_VARIABLE(aRequest);
+
+    // 1. 最新情報の収集リクエストを投げる (キャッシュの更新)
+    // 注意: otThreadSendDiagnosticGet は非同期なので、
+    // ここで呼ぶか、バックグラウンドで定期実行するかは運用次第です。
+    // mDiagnosticManager->UpdateCache();
+
+    std::string body = mDiagnosticManager->GetTopologyJson();
+
+    aResponse.status = StatusCode::OK_200; //
+    aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON); //
 }
 
 void RestWebServer::DeleteOutDatedDiagnostic(void)

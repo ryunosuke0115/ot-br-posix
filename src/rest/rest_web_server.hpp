@@ -61,6 +61,7 @@ namespace rest {
 /**
  * This class implements a REST server.
  */
+class DiagnosticManager;
 class RestWebServer
 {
 public:
@@ -132,6 +133,7 @@ private:
     void AddJoiner(const Request &aRequest, Response &aResponse) const;
     void RemoveJoiner(const Request &aRequest, Response &aResponse) const;
     void GetCoprocessorVersion(Response &aResponse) const;
+    void ApiTopologyHandler(const Request &aRequest, Response &aResponse) const;
 
     void DeleteOutDatedDiagnostic(void);
     void UpdateDiag(std::string aKey, std::vector<otNetworkDiagTlv> &aDiag);
@@ -167,6 +169,7 @@ private:
     std::thread     mServerThread;
 
     std::unordered_map<std::string, DiagInfo> mDiagSet;
+    std::unique_ptr<DiagnosticManager> mDiagnosticManager;
 };
 
 } // namespace rest

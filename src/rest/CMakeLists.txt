@@ -29,6 +29,7 @@
 add_library(otbr-rest
     rest_web_server.cpp
     json.cpp
+    diagnostic_manager.cpp
 )
 
 target_include_directories(otbr-rest PUBLIC
@@ -43,4 +44,8 @@ target_link_libraries(otbr-rest
         openthread-ftd
         openthread-posix
         pthread
+)
+
+target_include_directories(otbr-rest PRIVATE
+    ${OTBR_SOURCES_DIR}/third_party/cJSON/repo
 )
