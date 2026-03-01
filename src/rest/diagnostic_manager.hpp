@@ -31,6 +31,7 @@ private:
 
     struct DeviceDiagCache
     {
+        std::string mExtAddr;
         std::string mRloc16;
     };
 

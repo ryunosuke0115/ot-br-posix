@@ -9,12 +9,12 @@ namespace otbr {
 namespace rest {
 
 // 取得する TLV Type
-static const uint8_t kTlvTypes[] = {1};
+static const uint8_t kTlvTypes[] = {0, 1};
 
 DiagnosticManager::DiagnosticManager(otbr::Host::RcpHost &aHost)
     : mHost(aHost)
 {
-    // 初期化が必要な場合はここに記述
+    // Initialize
 }
 
 otInstance *DiagnosticManager::GetInstance(void) const
@@ -28,7 +28,9 @@ void DiagnosticManager::FetchDiagnosticData(void)
     if (instance == nullptr) return;
 
     struct otIp6Address multicastAddress;
-    otIp6AddressFromString("ff03::2", &multicastAddress); // 全ルーター宛
+
+    // to all devices in the Thread network
+    otIp6AddressFromString("ff03::2", &multicastAddress);
 
     otThreadSendDiagnosticGet(
         instance, &multicastAddress, kTlvTypes, sizeof(kTlvTypes),
@@ -46,11 +48,24 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
 {
     otNetworkDiagTlv      diagTlv;
     otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
+    std::string           parsedExtAddr = "";
     std::string           parsedRloc = "";
 
     while (otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv) == OT_ERROR_NONE)
     {
-        if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS)
+        otbrLogInfo("DiagnosticManager: Found TLV Type = %u", diagTlv.mType);
+        // Type 0: Extended Address
+        if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS)
+        {
+            char buf[17];
+            const uint8_t *ext = diagTlv.mData.mExtAddress.m8;
+            snprintf(buf, sizeof(buf), "%02x%02x%02x%02x%02x%02x%02x%02x",
+                     ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], ext[6], ext[7]);
+            parsedExtAddr = buf;
+            otbrLogInfo("DiagnosticManager: Parsed ExtAddr: %s", parsedExtAddr.c_str());
+        }
+        // Type 1: RLOC16
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS)
         {
             char buf[7];
             snprintf(buf, sizeof(buf), "0x%04x", diagTlv.mData.mAddr16);
@@ -58,16 +73,18 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
         }
     }
 
-    if (!parsedRloc.empty())
+    if (!parsedExtAddr.empty())
     {
-        mDeviceCache[parsedRloc].mRloc16 = parsedRloc;
-        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s", parsedRloc.c_str());
+        mDeviceCache[parsedExtAddr].mExtAddr = parsedExtAddr;
+        mDeviceCache[parsedExtAddr].mRloc16 = parsedRloc;
+        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s", parsedRloc.c_str(), parsedExtAddr.c_str());
     }
 }
 
 std::string DiagnosticManager::GetDiagnosticData(void)
 {
-    // リクエスト時に収集を開始
+    // TODO: 定期的に実行する
+    FetchDiagnosticData();
     FetchDiagnosticData();
 
     cJSON *root  = cJSON_CreateObject();
@@ -76,7 +93,8 @@ std::string DiagnosticManager::GetDiagnosticData(void)
     for (std::map<std::string, DeviceDiagCache>::const_iterator it = mDeviceCache.begin(); it != mDeviceCache.end(); ++it)
     {
         cJSON *node = cJSON_CreateObject();
-        cJSON_AddStringToObject(node, "rloc16", it->first.c_str());
+        cJSON_AddStringToObject(node, "extAddr", it->first.c_str());
+        cJSON_AddStringToObject(node, "rloc16", it->second.mRloc16.c_str());
         cJSON_AddItemToArray(nodes, node);
     }
 
