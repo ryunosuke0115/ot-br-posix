@@ -8,13 +8,39 @@
 namespace otbr {
 namespace rest {
 
+static const std::chrono::seconds kFetchInterval = std::chrono::seconds(15);
+
 // 取得する TLV Type
 static const uint8_t kTlvTypes[] = {0, 1};
 
 DiagnosticManager::DiagnosticManager(otbr::Host::RcpHost &aHost)
     : mHost(aHost)
+    , mNextFetchTime(std::chrono::steady_clock::now())
 {
     // Initialize
+}
+
+void DiagnosticManager::Update(MainloopContext &aMainloop)
+{
+    OT_UNUSED_VARIABLE(aMainloop);
+}
+
+void DiagnosticManager::Process(const MainloopContext &aMainloop)
+{
+    OT_UNUSED_VARIABLE(aMainloop);
+
+    auto now = std::chrono::steady_clock::now();
+
+    // 次回実行時刻を過ぎているか判定
+    if (now >= mNextFetchTime)
+    {
+        mHost.PostTimerTask(otbr::Milliseconds(0), [this]() {
+            FetchDiagnosticData();
+        });
+
+        // 次回実行時刻を更新
+        mNextFetchTime = now + kFetchInterval;
+    }
 }
 
 otInstance *DiagnosticManager::GetInstance(void) const
@@ -86,9 +112,6 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
 
 std::string DiagnosticManager::GetDiagnosticData(void)
 {
-    // TODO: 定期的に実行する
-    FetchDiagnosticData();
-
     cJSON *root  = cJSON_CreateObject();
     cJSON *nodes = cJSON_AddArrayToObject(root, "nodes");
 

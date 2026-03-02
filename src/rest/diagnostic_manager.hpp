@@ -8,6 +8,7 @@
 
 #include <openthread/instance.h>
 #include <openthread/netdiag.h>
+#include "common/mainloop.hpp"
 
 namespace otbr {
 namespace Host {
@@ -15,10 +16,13 @@ class RcpHost;
 }
 namespace rest {
 
-class DiagnosticManager
+class DiagnosticManager: public MainloopProcessor
 {
 public:
     explicit DiagnosticManager(otbr::Host::RcpHost &aHost);
+
+    void Update(MainloopContext &aMainloop) override;
+    void Process(const MainloopContext &aMainloop) override;
 
     std::string GetDiagnosticData(void);
 
@@ -28,6 +32,7 @@ private:
     otInstance *GetInstance(void) const;
 
     otbr::Host::RcpHost &mHost;
+    std::chrono::steady_clock::time_point mNextFetchTime;
 
     struct DeviceDiagCache
     {
