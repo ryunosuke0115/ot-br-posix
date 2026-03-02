@@ -29,6 +29,9 @@ void DiagnosticManager::FetchDiagnosticData(void)
 
     struct otIp6Address multicastAddress;
 
+    // start get diagnostic data
+    otbrLogInfo("DiagnosticManager: Start fetching diagnostic data from network");
+
     // to all devices in the Thread network
     otIp6AddressFromString("ff03::2", &multicastAddress);
 
@@ -53,7 +56,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
 
     while (otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv) == OT_ERROR_NONE)
     {
-        otbrLogInfo("DiagnosticManager: Found TLV Type = %u", diagTlv.mType);
+        // otbrLogInfo("DiagnosticManager: Found TLV Type = %u", diagTlv.mType);
         // Type 0: Extended Address
         if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS)
         {
@@ -62,7 +65,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
             snprintf(buf, sizeof(buf), "%02x%02x%02x%02x%02x%02x%02x%02x",
                      ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], ext[6], ext[7]);
             parsedExtAddr = buf;
-            otbrLogInfo("DiagnosticManager: Parsed ExtAddr: %s", parsedExtAddr.c_str());
+            // otbrLogInfo("DiagnosticManager: Parsed ExtAddr: %s", parsedExtAddr.c_str());
         }
         // Type 1: RLOC16
         else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS)
@@ -84,7 +87,6 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
 std::string DiagnosticManager::GetDiagnosticData(void)
 {
     // TODO: 定期的に実行する
-    FetchDiagnosticData();
     FetchDiagnosticData();
 
     cJSON *root  = cJSON_CreateObject();
