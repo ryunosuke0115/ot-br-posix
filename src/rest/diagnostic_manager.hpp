@@ -38,6 +38,7 @@ private:
     {
         std::string mExtAddr;
         std::string mRloc16;
+        std::vector<std::string> mIp6AddressList;
     };
 
     std::map<std::string, DeviceDiagCache> mDeviceCache;

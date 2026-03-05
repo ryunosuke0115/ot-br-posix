@@ -4,6 +4,7 @@
 #include "host/rcp_host.hpp"
 #include <cJSON.h>
 #include "common/logging.hpp"
+#include <arpa/inet.h>
 
 namespace otbr {
 namespace rest {
@@ -11,7 +12,7 @@ namespace rest {
 static const std::chrono::seconds kFetchInterval = std::chrono::seconds(15);
 
 // 取得する TLV Type
-static const uint8_t kTlvTypes[] = {0, 1};
+static const uint8_t kTlvTypes[] = {0, 1, 8};
 
 DiagnosticManager::DiagnosticManager(otbr::Host::RcpHost &aHost)
     : mHost(aHost)
@@ -79,6 +80,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
     std::string           parsedExtAddr = "";
     std::string           parsedRloc = "";
+    std::vector<std::string> parsedIpList;
 
     while (otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv) == OT_ERROR_NONE)
     {
@@ -100,13 +102,24 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
             snprintf(buf, sizeof(buf), "0x%04x", diagTlv.mData.mAddr16);
             parsedRloc = buf;
         }
+        // Type 8: IPv6 Address List
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST)
+        {
+            for (uint8_t i = 0; i < diagTlv.mData.mIp6AddrList.mCount; i++)
+            {
+                char addrStr[INET6_ADDRSTRLEN];
+                inet_ntop(AF_INET6, &diagTlv.mData.mIp6AddrList.mList[i], addrStr, sizeof(addrStr));
+                parsedIpList.push_back(addrStr);
+            }
+        }
     }
 
     if (!parsedExtAddr.empty())
     {
         mDeviceCache[parsedExtAddr].mExtAddr = parsedExtAddr;
         mDeviceCache[parsedExtAddr].mRloc16 = parsedRloc;
-        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s", parsedRloc.c_str(), parsedExtAddr.c_str());
+        mDeviceCache[parsedExtAddr].mIp6AddressList = parsedIpList;
+        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s, IPs count = %zu", parsedRloc.c_str(), parsedExtAddr.c_str(), parsedIpList.size());
     }
 }
 
@@ -120,6 +133,11 @@ std::string DiagnosticManager::GetDiagnosticData(void)
         cJSON *node = cJSON_CreateObject();
         cJSON_AddStringToObject(node, "extAddr", it->first.c_str());
         cJSON_AddStringToObject(node, "rloc16", it->second.mRloc16.c_str());
+        cJSON *ipList = cJSON_AddArrayToObject(node, "ipAddresses");
+        for (const std::string& ip : it->second.mIp6AddressList)
+        {
+            cJSON_AddItemToArray(ipList, cJSON_CreateString(ip.c_str()));
+        }
         cJSON_AddItemToArray(nodes, node);
     }
 
