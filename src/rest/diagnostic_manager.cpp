@@ -5,6 +5,8 @@
 #include <cJSON.h>
 #include "common/logging.hpp"
 #include <arpa/inet.h>
+#include <inttypes.h>
+#include <openthread/openthread-system.h>
 
 namespace otbr {
 namespace rest {
@@ -35,6 +37,32 @@ void DiagnosticManager::Process(const MainloopContext &aMainloop)
     // 次回実行時刻を過ぎているか判定
     if (now >= mNextFetchTime)
     {
+        // トラフィック統計をログ出力
+        const otSysTrafficStats *stats = otSysGetTrafficStats();
+        otbrLogInfo("[TRAFFIC] Thread->External: packets=%" PRIu64 " bytes=%" PRIu64 " lastSrc=%s lastDst=%s",
+                    stats->mThreadToExternalPackets, stats->mThreadToExternalBytes,
+                    stats->mLastThreadToExternalSrc, stats->mLastThreadToExternalDst);
+        otbrLogInfo("[TRAFFIC] External->Thread: packets=%" PRIu64 " bytes=%" PRIu64 " lastSrc=%s lastDst=%s",
+                    stats->mExternalToThreadPackets, stats->mExternalToThreadBytes,
+                    stats->mLastExternalToThreadSrc, stats->mLastExternalToThreadDst);
+
+        // 宛先別統計をログ出力
+        const otSysPerDestStats *perDest = otSysGetPerDestStats();
+        for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
+        {
+            otbrLogInfo("[TRAFFIC] Thread->External dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+                        perDest->mThreadToExternal[i].mDstAddr,
+                        perDest->mThreadToExternal[i].mPackets,
+                        perDest->mThreadToExternal[i].mBytes);
+        }
+        for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
+        {
+            otbrLogInfo("[TRAFFIC] External->Thread dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+                        perDest->mExternalToThread[i].mDstAddr,
+                        perDest->mExternalToThread[i].mPackets,
+                        perDest->mExternalToThread[i].mBytes);
+        }
+
         mHost.PostTimerTask(otbr::Milliseconds(0), [this]() {
             FetchDiagnosticData();
         });

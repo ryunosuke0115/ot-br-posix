@@ -37,9 +37,11 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <httplib.h>
 
 #include <openthread/commissioner.h>
+#include <openthread/openthread-system.h>
 
 #include "common/api_strings.hpp"
 #include "rest/json.hpp"
@@ -66,6 +68,7 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT "/networks/current"
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_COMMISSION "/networks/commission"
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_PREFIX "/networks/current/prefix"
+#define OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS "/api/traffic-stats"
 
 #define OT_REST_ROUTE_TOPOLOGY "/api/topology"
 
@@ -137,6 +140,7 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Delete(OT_REST_RESOURCE_PATH_NODE_COMMISSIONER_JOINER, MakeHandler(&RestWebServer::CommissionerJoiner));
     mServer.Options(OT_REST_RESOURCE_PATH_NODE_COMMISSIONER_JOINER, MakeHandler(&RestWebServer::CommissionerJoiner));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_COPROCESSOR_VERSION, MakeHandler(&RestWebServer::CoprocessorVersion));
+    mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
     mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
     mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
 }
@@ -996,6 +1000,70 @@ void RestWebServer::CoprocessorVersion(const Request &aRequest, Response &aRespo
     {
         ErrorHandler(aResponse, StatusCode::MethodNotAllowed_405);
     }
+}
+
+void RestWebServer::TrafficStats(const Request &aRequest, Response &aResponse) const
+{
+    if (GetMethod(aRequest) != HttpMethod::kGet)
+    {
+        ErrorHandler(aResponse, StatusCode::MethodNotAllowed_405);
+        return;
+    }
+
+    const otSysTrafficStats  *stats   = otSysGetTrafficStats();
+    const otSysPerDestStats  *perDest = otSysGetPerDestStats();
+    char                      tmp[256];
+    std::string               body;
+
+    otbrLogInfo("[TRAFFIC] Thread->External: packets=%" PRIu64 " bytes=%" PRIu64 " lastSrc=%s lastDst=%s",
+                stats->mThreadToExternalPackets, stats->mThreadToExternalBytes,
+                stats->mLastThreadToExternalSrc, stats->mLastThreadToExternalDst);
+    otbrLogInfo("[TRAFFIC] External->Thread: packets=%" PRIu64 " bytes=%" PRIu64 " lastSrc=%s lastDst=%s",
+                stats->mExternalToThreadPackets, stats->mExternalToThreadBytes,
+                stats->mLastExternalToThreadSrc, stats->mLastExternalToThreadDst);
+
+    // Thread->External
+    snprintf(tmp, sizeof(tmp),
+             "{\"threadToExternal\":{\"packets\":%" PRIu64 ",\"bytes\":%" PRIu64
+             ",\"lastSrc\":\"%s\",\"lastDst\":\"%s\",\"perDest\":[",
+             stats->mThreadToExternalPackets, stats->mThreadToExternalBytes,
+             stats->mLastThreadToExternalSrc, stats->mLastThreadToExternalDst);
+    body += tmp;
+
+    for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
+    {
+        snprintf(tmp, sizeof(tmp),
+                 "%s{\"dst\":\"%s\",\"packets\":%" PRIu64 ",\"bytes\":%" PRIu64 "}",
+                 (i > 0 ? "," : ""),
+                 perDest->mThreadToExternal[i].mDstAddr,
+                 perDest->mThreadToExternal[i].mPackets,
+                 perDest->mThreadToExternal[i].mBytes);
+        body += tmp;
+    }
+
+    // External->Thread
+    snprintf(tmp, sizeof(tmp),
+             "]},\"externalToThread\":{\"packets\":%" PRIu64 ",\"bytes\":%" PRIu64
+             ",\"lastSrc\":\"%s\",\"lastDst\":\"%s\",\"perDest\":[",
+             stats->mExternalToThreadPackets, stats->mExternalToThreadBytes,
+             stats->mLastExternalToThreadSrc, stats->mLastExternalToThreadDst);
+    body += tmp;
+
+    for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
+    {
+        snprintf(tmp, sizeof(tmp),
+                 "%s{\"dst\":\"%s\",\"packets\":%" PRIu64 ",\"bytes\":%" PRIu64 "}",
+                 (i > 0 ? "," : ""),
+                 perDest->mExternalToThread[i].mDstAddr,
+                 perDest->mExternalToThread[i].mPackets,
+                 perDest->mExternalToThread[i].mBytes);
+        body += tmp;
+    }
+
+    body += "]}}";
+
+    aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON);
+    aResponse.status = StatusCode::OK_200;
 }
 
 void RestWebServer::ApiTopologyHandler(const Request &aRequest, Response &aResponse) const

@@ -133,6 +133,7 @@ private:
     void AddJoiner(const Request &aRequest, Response &aResponse) const;
     void RemoveJoiner(const Request &aRequest, Response &aResponse) const;
     void GetCoprocessorVersion(Response &aResponse) const;
+    void TrafficStats(const Request &aRequest, Response &aResponse) const;
     void ApiTopologyHandler(const Request &aRequest, Response &aResponse) const;
 
     void DeleteOutDatedDiagnostic(void);
