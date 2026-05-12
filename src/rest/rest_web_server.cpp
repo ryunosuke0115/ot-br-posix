@@ -69,6 +69,7 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_COMMISSION "/networks/commission"
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_PREFIX "/networks/current/prefix"
 #define OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS "/api/traffic-stats"
+#define OT_REST_RESOURCE_PATH_NETWORK_INFO "/api/network-info"
 
 #define OT_REST_ROUTE_TOPOLOGY "/api/topology"
 
@@ -142,6 +143,7 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_COPROCESSOR_VERSION, MakeHandler(&RestWebServer::CoprocessorVersion));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
     mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
+    mServer.Get(OT_REST_RESOURCE_PATH_NETWORK_INFO, MakeHandler(&RestWebServer::NetworkInfo));
     mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
 }
 
@@ -1079,6 +1081,16 @@ void RestWebServer::ApiTopologyHandler(const Request &aRequest, Response &aRespo
 
     aResponse.status = StatusCode::OK_200; //
     aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON); //
+}
+
+void RestWebServer::NetworkInfo(const Request &aRequest, Response &aResponse) const
+{
+    OT_UNUSED_VARIABLE(aRequest);
+
+    std::string body = mDiagnosticManager->GetNetworkInfo();
+
+    aResponse.status = StatusCode::OK_200;
+    aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON);
 }
 
 void RestWebServer::DeleteOutDatedDiagnostic(void)

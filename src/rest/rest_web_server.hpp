@@ -135,6 +135,7 @@ private:
     void GetCoprocessorVersion(Response &aResponse) const;
     void TrafficStats(const Request &aRequest, Response &aResponse) const;
     void ApiTopologyHandler(const Request &aRequest, Response &aResponse) const;
+    void NetworkInfo(const Request &aRequest, Response &aResponse) const;
 
     void DeleteOutDatedDiagnostic(void);
     void UpdateDiag(std::string aKey, std::vector<otNetworkDiagTlv> &aDiag);

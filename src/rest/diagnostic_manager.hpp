@@ -25,6 +25,7 @@ public:
     void Process(const MainloopContext &aMainloop) override;
 
     std::string GetDiagnosticData(void);
+    std::string GetNetworkInfo(void);
 
 private:
     void        FetchDiagnosticData(void);

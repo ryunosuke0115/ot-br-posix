@@ -177,5 +177,63 @@ std::string DiagnosticManager::GetDiagnosticData(void)
     return result;
 }
 
+std::string DiagnosticManager::GetNetworkInfo(void)
+{
+    cJSON *root  = cJSON_CreateObject();
+    cJSON *nodes = cJSON_AddArrayToObject(root, "nodes");
+
+    const otSysPerDestStats *perDest = otSysGetPerDestStats();
+
+    for (std::map<std::string, DeviceDiagCache>::const_iterator it = mDeviceCache.begin(); it != mDeviceCache.end();
+         ++it)
+    {
+        cJSON *node = cJSON_CreateObject();
+        cJSON_AddStringToObject(node, "extendedAddress", it->first.c_str());
+        cJSON_AddStringToObject(node, "rloc16", it->second.mRloc16.c_str());
+
+        cJSON *ipList = cJSON_AddArrayToObject(node, "ipv6-lists");
+        for (const std::string &ip : it->second.mIp6AddressList)
+        {
+            cJSON_AddItemToArray(ipList, cJSON_CreateString(ip.c_str()));
+        }
+
+        cJSON *traffic = cJSON_CreateObject();
+        cJSON_AddItemToObject(node, "traffic", traffic);
+        cJSON *externalToThread = cJSON_AddArrayToObject(traffic, "external-to-thread");
+        cJSON *threadToExternal = cJSON_AddArrayToObject(traffic, "thread-to-external");
+
+        if (perDest != nullptr)
+        {
+            for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
+            {
+                cJSON *entry = cJSON_CreateObject();
+                cJSON_AddStringToObject(entry, "src-ipv6", perDest->mExternalToThread[i].mDstAddr);
+                cJSON_AddNumberToObject(entry, "packets", perDest->mExternalToThread[i].mPackets);
+                cJSON_AddNumberToObject(entry, "bytes", perDest->mExternalToThread[i].mBytes);
+                cJSON_AddItemToArray(externalToThread, entry);
+            }
+
+            for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
+            {
+                cJSON *entry = cJSON_CreateObject();
+                cJSON_AddStringToObject(entry, "dst-ipv6", perDest->mThreadToExternal[i].mDstAddr);
+                cJSON_AddNumberToObject(entry, "packets", perDest->mThreadToExternal[i].mPackets);
+                cJSON_AddNumberToObject(entry, "bytes", perDest->mThreadToExternal[i].mBytes);
+                cJSON_AddItemToArray(threadToExternal, entry);
+            }
+        }
+
+        cJSON_AddItemToArray(nodes, node);
+    }
+
+    char *jsonStr = cJSON_Print(root);
+    std::string result = jsonStr ? jsonStr : "{}";
+    if (jsonStr)
+        cJSON_free(jsonStr);
+    cJSON_Delete(root);
+
+    return result;
+}
+
 } // namespace rest
 } // namespace otbr
