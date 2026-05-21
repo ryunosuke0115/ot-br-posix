@@ -50,14 +50,16 @@ void DiagnosticManager::Process(const MainloopContext &aMainloop)
         const otSysPerDestStats *perDest = otSysGetPerDestStats();
         for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
         {
-            otbrLogInfo("[TRAFFIC] Thread->External dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+            otbrLogInfo("[TRAFFIC] Thread->External src=%-39s dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+                        perDest->mThreadToExternal[i].mSrcAddr,
                         perDest->mThreadToExternal[i].mDstAddr,
                         perDest->mThreadToExternal[i].mPackets,
                         perDest->mThreadToExternal[i].mBytes);
         }
         for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
         {
-            otbrLogInfo("[TRAFFIC] External->Thread dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+            otbrLogInfo("[TRAFFIC] External->Thread src=%-39s dst=%-39s packets=%" PRIu64 " bytes=%" PRIu64,
+                        perDest->mExternalToThread[i].mSrcAddr,
                         perDest->mExternalToThread[i].mDstAddr,
                         perDest->mExternalToThread[i].mPackets,
                         perDest->mExternalToThread[i].mBytes);
@@ -187,12 +189,14 @@ std::string DiagnosticManager::GetNetworkInfo(void)
     for (std::map<std::string, DeviceDiagCache>::const_iterator it = mDeviceCache.begin(); it != mDeviceCache.end();
          ++it)
     {
+        const DeviceDiagCache &device = it->second;
+
         cJSON *node = cJSON_CreateObject();
         cJSON_AddStringToObject(node, "extendedAddress", it->first.c_str());
-        cJSON_AddStringToObject(node, "rloc16", it->second.mRloc16.c_str());
+        cJSON_AddStringToObject(node, "rloc16", device.mRloc16.c_str());
 
         cJSON *ipList = cJSON_AddArrayToObject(node, "ipv6-lists");
-        for (const std::string &ip : it->second.mIp6AddressList)
+        for (const std::string &ip : device.mIp6AddressList)
         {
             cJSON_AddItemToArray(ipList, cJSON_CreateString(ip.c_str()));
         }
@@ -204,17 +208,37 @@ std::string DiagnosticManager::GetNetworkInfo(void)
 
         if (perDest != nullptr)
         {
+            // External->Thread: mDstAddr が Thread デバイスの IP なのでノードの IP と照合
             for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
             {
+                const std::string dst(perDest->mExternalToThread[i].mDstAddr);
+                bool belongs = false;
+
+                for (const std::string &ip : device.mIp6AddressList)
+                {
+                    if (ip == dst) { belongs = true; break; }
+                }
+                if (!belongs) continue;
+
                 cJSON *entry = cJSON_CreateObject();
-                cJSON_AddStringToObject(entry, "src-ipv6", perDest->mExternalToThread[i].mDstAddr);
+                cJSON_AddStringToObject(entry, "src-ipv6", perDest->mExternalToThread[i].mSrcAddr);
                 cJSON_AddNumberToObject(entry, "packets", perDest->mExternalToThread[i].mPackets);
                 cJSON_AddNumberToObject(entry, "bytes", perDest->mExternalToThread[i].mBytes);
                 cJSON_AddItemToArray(externalToThread, entry);
             }
 
+            // Thread->External: mSrcAddr が Thread デバイスの IP なのでノードの IP と照合
             for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
             {
+                const std::string src(perDest->mThreadToExternal[i].mSrcAddr);
+                bool belongs = false;
+
+                for (const std::string &ip : device.mIp6AddressList)
+                {
+                    if (ip == src) { belongs = true; break; }
+                }
+                if (!belongs) continue;
+
                 cJSON *entry = cJSON_CreateObject();
                 cJSON_AddStringToObject(entry, "dst-ipv6", perDest->mThreadToExternal[i].mDstAddr);
                 cJSON_AddNumberToObject(entry, "packets", perDest->mThreadToExternal[i].mPackets);
