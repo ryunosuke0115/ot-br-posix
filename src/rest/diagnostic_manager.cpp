@@ -37,6 +37,9 @@ void DiagnosticManager::Process(const MainloopContext &aMainloop)
     // 次回実行時刻を過ぎているか判定
     if (now >= mNextFetchTime)
     {
+        // トラフィック統計を更新
+        UpdateTrafficStats(std::chrono::duration<double>(kFetchInterval).count());
+
         // トラフィック統計をログ出力
         const otSysTrafficStats *stats = otSysGetTrafficStats();
         otbrLogInfo("[TRAFFIC] Thread->External: packets=%" PRIu64 " bytes=%" PRIu64 " lastSrc=%s lastDst=%s",
@@ -153,6 +156,61 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     }
 }
 
+void DiagnosticManager::UpdateTrafficStats(double aElapsedSec)
+{
+    const otSysPerDestStats *perDest = otSysGetPerDestStats();
+    if (perDest == nullptr) return;
+
+    for (auto &kv : mDeviceCache)
+    {
+        DeviceDiagCache &device = kv.second;
+
+        // External->Thread: mDstAddr が Thread デバイスの IP なのでノードの IP と照合
+        for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
+        {
+            const std::string dst(perDest->mExternalToThread[i].mDstAddr);
+            bool belongs = false;
+
+            for (const std::string &ip : device.mIp6AddressList)
+            {
+                if (ip == dst) { belongs = true; break; }
+            }
+            if (!belongs) continue;
+
+            const std::string src(perDest->mExternalToThread[i].mSrcAddr);
+            TrafficEntry &entry  = device.mExternalToThread[src];
+            entry.mPackets       = perDest->mExternalToThread[i].mPackets;
+            entry.mBytes         = perDest->mExternalToThread[i].mBytes;
+            entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
+            entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            entry.mLastPackets   = entry.mPackets;
+            entry.mLastBytes     = entry.mBytes;
+        }
+
+        // Thread->External: mSrcAddr が Thread デバイスの IP なのでノードの IP と照合
+        for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
+        {
+            const std::string src(perDest->mThreadToExternal[i].mSrcAddr);
+            bool belongs = false;
+
+            for (const std::string &ip : device.mIp6AddressList)
+            {
+                if (ip == src) { belongs = true; break; }
+            }
+            if (!belongs) continue;
+
+            const std::string dst(perDest->mThreadToExternal[i].mDstAddr);
+            TrafficEntry &entry  = device.mThreadToExternal[dst];
+            entry.mPackets       = perDest->mThreadToExternal[i].mPackets;
+            entry.mBytes         = perDest->mThreadToExternal[i].mBytes;
+            entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
+            entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            entry.mLastPackets   = entry.mPackets;
+            entry.mLastBytes     = entry.mBytes;
+        }
+    }
+}
+
 std::string DiagnosticManager::GetDiagnosticData(void)
 {
     cJSON *root  = cJSON_CreateObject();
@@ -184,8 +242,6 @@ std::string DiagnosticManager::GetNetworkInfo(void)
     cJSON *root  = cJSON_CreateObject();
     cJSON *nodes = cJSON_AddArrayToObject(root, "nodes");
 
-    const otSysPerDestStats *perDest = otSysGetPerDestStats();
-
     for (std::map<std::string, DeviceDiagCache>::const_iterator it = mDeviceCache.begin(); it != mDeviceCache.end();
          ++it)
     {
@@ -206,45 +262,30 @@ std::string DiagnosticManager::GetNetworkInfo(void)
         cJSON *externalToThread = cJSON_AddArrayToObject(traffic, "external-to-thread");
         cJSON *threadToExternal = cJSON_AddArrayToObject(traffic, "thread-to-external");
 
-        if (perDest != nullptr)
+        // External->Thread
+        for (std::map<std::string, TrafficEntry>::const_iterator e = device.mExternalToThread.begin();
+             e != device.mExternalToThread.end(); ++e)
         {
-            // External->Thread: mDstAddr が Thread デバイスの IP なのでノードの IP と照合
-            for (uint16_t i = 0; i < perDest->mExternalToThreadCount; i++)
-            {
-                const std::string dst(perDest->mExternalToThread[i].mDstAddr);
-                bool belongs = false;
+            cJSON *entry = cJSON_CreateObject();
+            cJSON_AddStringToObject(entry, "src-ipv6",        e->first.c_str());
+            cJSON_AddNumberToObject(entry, "packets",         static_cast<double>(e->second.mPackets));
+            cJSON_AddNumberToObject(entry, "bytes",           static_cast<double>(e->second.mBytes));
+            cJSON_AddNumberToObject(entry, "packets-per-sec", e->second.mPacketsPerSec);
+            cJSON_AddNumberToObject(entry, "bytes-per-sec",   e->second.mBytesPerSec);
+            cJSON_AddItemToArray(externalToThread, entry);
+        }
 
-                for (const std::string &ip : device.mIp6AddressList)
-                {
-                    if (ip == dst) { belongs = true; break; }
-                }
-                if (!belongs) continue;
-
-                cJSON *entry = cJSON_CreateObject();
-                cJSON_AddStringToObject(entry, "src-ipv6", perDest->mExternalToThread[i].mSrcAddr);
-                cJSON_AddNumberToObject(entry, "packets", perDest->mExternalToThread[i].mPackets);
-                cJSON_AddNumberToObject(entry, "bytes", perDest->mExternalToThread[i].mBytes);
-                cJSON_AddItemToArray(externalToThread, entry);
-            }
-
-            // Thread->External: mSrcAddr が Thread デバイスの IP なのでノードの IP と照合
-            for (uint16_t i = 0; i < perDest->mThreadToExternalCount; i++)
-            {
-                const std::string src(perDest->mThreadToExternal[i].mSrcAddr);
-                bool belongs = false;
-
-                for (const std::string &ip : device.mIp6AddressList)
-                {
-                    if (ip == src) { belongs = true; break; }
-                }
-                if (!belongs) continue;
-
-                cJSON *entry = cJSON_CreateObject();
-                cJSON_AddStringToObject(entry, "dst-ipv6", perDest->mThreadToExternal[i].mDstAddr);
-                cJSON_AddNumberToObject(entry, "packets", perDest->mThreadToExternal[i].mPackets);
-                cJSON_AddNumberToObject(entry, "bytes", perDest->mThreadToExternal[i].mBytes);
-                cJSON_AddItemToArray(threadToExternal, entry);
-            }
+        // Thread->External
+        for (std::map<std::string, TrafficEntry>::const_iterator e = device.mThreadToExternal.begin();
+             e != device.mThreadToExternal.end(); ++e)
+        {
+            cJSON *entry = cJSON_CreateObject();
+            cJSON_AddStringToObject(entry, "dst-ipv6",        e->first.c_str());
+            cJSON_AddNumberToObject(entry, "packets",         static_cast<double>(e->second.mPackets));
+            cJSON_AddNumberToObject(entry, "bytes",           static_cast<double>(e->second.mBytes));
+            cJSON_AddNumberToObject(entry, "packets-per-sec", e->second.mPacketsPerSec);
+            cJSON_AddNumberToObject(entry, "bytes-per-sec",   e->second.mBytesPerSec);
+            cJSON_AddItemToArray(threadToExternal, entry);
         }
 
         cJSON_AddItemToArray(nodes, node);

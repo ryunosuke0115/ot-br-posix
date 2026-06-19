@@ -30,16 +30,30 @@ public:
 private:
     void        FetchDiagnosticData(void);
     void        HandleDiagnosticResponse(const otMessage *aMessage);
+    void        UpdateTrafficStats(double aElapsedSec);
     otInstance *GetInstance(void) const;
 
     otbr::Host::RcpHost &mHost;
     std::chrono::steady_clock::time_point mNextFetchTime;
 
+    struct TrafficEntry
+    {
+        uint64_t mPackets       = 0;
+        uint64_t mBytes         = 0;
+        double   mPacketsPerSec = 0.0;
+        double   mBytesPerSec   = 0.0;
+        uint64_t mLastPackets   = 0;
+        uint64_t mLastBytes     = 0;
+    };
+
     struct DeviceDiagCache
     {
-        std::string mExtAddr;
-        std::string mRloc16;
+        std::string              mExtAddr;
+        std::string              mRloc16;
         std::vector<std::string> mIp6AddressList;
+        // key: src-ipv6 (External->Thread) or dst-ipv6 (Thread->External)
+        std::map<std::string, TrafficEntry> mExternalToThread;
+        std::map<std::string, TrafficEntry> mThreadToExternal;
     };
 
     std::map<std::string, DeviceDiagCache> mDeviceCache;
