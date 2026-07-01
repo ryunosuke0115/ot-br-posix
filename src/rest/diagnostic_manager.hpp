@@ -46,11 +46,32 @@ private:
         uint64_t mLastBytes     = 0;
     };
 
+    struct RouteEntry
+    {
+        uint8_t  mRouterId       = 0;
+        uint16_t mRloc16         = 0;
+        uint8_t  mLinkQualityIn  = 0;
+        uint8_t  mLinkQualityOut = 0;
+        uint8_t  mRouteCost      = 0;
+    };
+
+    struct LeaderData
+    {
+        uint32_t mPartitionId       = 0;
+        uint8_t  mWeighting         = 0;
+        uint8_t  mDataVersion       = 0;
+        uint8_t  mStableDataVersion = 0;
+        uint8_t  mLeaderRouterId    = 0;
+    };
+
     struct DeviceDiagCache
     {
         std::string              mExtAddr;
         std::string              mRloc16;
         std::vector<std::string> mIp6AddressList;
+        uint8_t                  mRouteIdSequence = 0;
+        std::vector<RouteEntry>  mRouteList;
+        LeaderData               mLeaderData;
         // key: src-ipv6 (External->Thread) or dst-ipv6 (Thread->External)
         std::map<std::string, TrafficEntry> mExternalToThread;
         std::map<std::string, TrafficEntry> mThreadToExternal;

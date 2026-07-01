@@ -14,7 +14,13 @@ namespace rest {
 static const std::chrono::seconds kFetchInterval = std::chrono::seconds(15);
 
 // 取得する TLV Type
-static const uint8_t kTlvTypes[] = {0, 1, 8};
+static const uint8_t kTlvTypes[] = {
+    OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS,   // # Extended Address
+    OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS, // # RLOC16
+    OT_NETWORK_DIAGNOSTIC_TLV_ROUTE,         // # Route
+    OT_NETWORK_DIAGNOSTIC_TLV_LEADER_DATA,   // # Leader Data
+    OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST, // # IPv6 Address List
+};
 
 DiagnosticManager::DiagnosticManager(otbr::Host::RcpHost &aHost)
     : mHost(aHost)
@@ -114,10 +120,14 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     std::string           parsedExtAddr = "";
     std::string           parsedRloc = "";
     std::vector<std::string> parsedIpList;
+    uint8_t              parsedRouteIdSequence = 0;
+    std::vector<RouteEntry> parsedRouteList;
+    LeaderData           parsedLeaderData;
 
     while (otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv) == OT_ERROR_NONE)
     {
         // otbrLogInfo("DiagnosticManager: Found TLV Type = %u", diagTlv.mType);
+        // # Extended Address
         // Type 0: Extended Address
         if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS)
         {
@@ -128,6 +138,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
             parsedExtAddr = buf;
             // otbrLogInfo("DiagnosticManager: Parsed ExtAddr: %s", parsedExtAddr.c_str());
         }
+        // # RLOC16
         // Type 1: RLOC16
         else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS)
         {
@@ -135,6 +146,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
             snprintf(buf, sizeof(buf), "0x%04x", diagTlv.mData.mAddr16);
             parsedRloc = buf;
         }
+        // # IPv6 Address List
         // Type 8: IPv6 Address List
         else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST)
         {
@@ -145,6 +157,39 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
                 parsedIpList.push_back(addrStr);
             }
         }
+        // # Route
+        // Type 5: Route64
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_ROUTE)
+        {
+            const otNetworkDiagRoute &route = diagTlv.mData.mRoute;
+
+            parsedRouteIdSequence = route.mIdSequence;
+            parsedRouteList.clear();
+
+            for (uint16_t i = 0; i < route.mRouteCount; i++)
+            {
+                RouteEntry entry;
+
+                entry.mRouterId       = route.mRouteData[i].mRouterId;
+                entry.mRloc16         = static_cast<uint16_t>(route.mRouteData[i].mRouterId << 10);
+                entry.mLinkQualityIn  = route.mRouteData[i].mLinkQualityIn;
+                entry.mLinkQualityOut = route.mRouteData[i].mLinkQualityOut;
+                entry.mRouteCost      = route.mRouteData[i].mRouteCost;
+                parsedRouteList.push_back(entry);
+            }
+        }
+        // # Leader Data
+        // Type 9: Leader Data
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_LEADER_DATA)
+        {
+            const otLeaderData &leaderData = diagTlv.mData.mLeaderData;
+
+            parsedLeaderData.mPartitionId       = leaderData.mPartitionId;
+            parsedLeaderData.mWeighting         = leaderData.mWeighting;
+            parsedLeaderData.mDataVersion       = leaderData.mDataVersion;
+            parsedLeaderData.mStableDataVersion = leaderData.mStableDataVersion;
+            parsedLeaderData.mLeaderRouterId    = leaderData.mLeaderRouterId;
+        }
     }
 
     if (!parsedExtAddr.empty())
@@ -152,7 +197,12 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
         mDeviceCache[parsedExtAddr].mExtAddr = parsedExtAddr;
         mDeviceCache[parsedExtAddr].mRloc16 = parsedRloc;
         mDeviceCache[parsedExtAddr].mIp6AddressList = parsedIpList;
-        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s, IPs count = %zu", parsedRloc.c_str(), parsedExtAddr.c_str(), parsedIpList.size());
+        mDeviceCache[parsedExtAddr].mRouteIdSequence = parsedRouteIdSequence;
+        mDeviceCache[parsedExtAddr].mRouteList = parsedRouteList;
+        mDeviceCache[parsedExtAddr].mLeaderData = parsedLeaderData;
+        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s, IPs count = %zu, routes count = %zu, leader router id = %u",
+                    parsedRloc.c_str(), parsedExtAddr.c_str(), parsedIpList.size(), parsedRouteList.size(),
+                    parsedLeaderData.mLeaderRouterId);
     }
 }
 
@@ -226,6 +276,30 @@ std::string DiagnosticManager::GetDiagnosticData(void)
         {
             cJSON_AddItemToArray(ipList, cJSON_CreateString(ip.c_str()));
         }
+
+        cJSON_AddNumberToObject(node, "routeIdSequence", it->second.mRouteIdSequence);
+        cJSON *routes = cJSON_AddArrayToObject(node, "routes");
+        for (const RouteEntry &route : it->second.mRouteList)
+        {
+            char rloc16[7];
+            cJSON *entry = cJSON_CreateObject();
+
+            snprintf(rloc16, sizeof(rloc16), "0x%04x", route.mRloc16);
+            cJSON_AddNumberToObject(entry, "routerId", route.mRouterId);
+            cJSON_AddStringToObject(entry, "rloc16", rloc16);
+            cJSON_AddNumberToObject(entry, "linkQualityIn", route.mLinkQualityIn);
+            cJSON_AddNumberToObject(entry, "linkQualityOut", route.mLinkQualityOut);
+            cJSON_AddNumberToObject(entry, "routeCost", route.mRouteCost);
+            cJSON_AddItemToArray(routes, entry);
+        }
+
+        cJSON *leaderData = cJSON_AddObjectToObject(node, "leaderData");
+        cJSON_AddNumberToObject(leaderData, "partitionId", it->second.mLeaderData.mPartitionId);
+        cJSON_AddNumberToObject(leaderData, "weighting", it->second.mLeaderData.mWeighting);
+        cJSON_AddNumberToObject(leaderData, "dataVersion", it->second.mLeaderData.mDataVersion);
+        cJSON_AddNumberToObject(leaderData, "stableDataVersion", it->second.mLeaderData.mStableDataVersion);
+        cJSON_AddNumberToObject(leaderData, "leaderRouterId", it->second.mLeaderData.mLeaderRouterId);
+
         cJSON_AddItemToArray(nodes, node);
     }
 
@@ -256,6 +330,29 @@ std::string DiagnosticManager::GetNetworkInfo(void)
         {
             cJSON_AddItemToArray(ipList, cJSON_CreateString(ip.c_str()));
         }
+
+        cJSON_AddNumberToObject(node, "route-id-sequence", device.mRouteIdSequence);
+        cJSON *routes = cJSON_AddArrayToObject(node, "routes");
+        for (const RouteEntry &route : device.mRouteList)
+        {
+            char rloc16[7];
+            cJSON *entry = cJSON_CreateObject();
+
+            snprintf(rloc16, sizeof(rloc16), "0x%04x", route.mRloc16);
+            cJSON_AddNumberToObject(entry, "router-id", route.mRouterId);
+            cJSON_AddStringToObject(entry, "rloc16", rloc16);
+            cJSON_AddNumberToObject(entry, "link-quality-in", route.mLinkQualityIn);
+            cJSON_AddNumberToObject(entry, "link-quality-out", route.mLinkQualityOut);
+            cJSON_AddNumberToObject(entry, "route-cost", route.mRouteCost);
+            cJSON_AddItemToArray(routes, entry);
+        }
+
+        cJSON *leaderData = cJSON_AddObjectToObject(node, "leader-data");
+        cJSON_AddNumberToObject(leaderData, "partition-id", device.mLeaderData.mPartitionId);
+        cJSON_AddNumberToObject(leaderData, "weighting", device.mLeaderData.mWeighting);
+        cJSON_AddNumberToObject(leaderData, "data-version", device.mLeaderData.mDataVersion);
+        cJSON_AddNumberToObject(leaderData, "stable-data-version", device.mLeaderData.mStableDataVersion);
+        cJSON_AddNumberToObject(leaderData, "leader-router-id", device.mLeaderData.mLeaderRouterId);
 
         cJSON *traffic = cJSON_CreateObject();
         cJSON_AddItemToObject(node, "traffic", traffic);
