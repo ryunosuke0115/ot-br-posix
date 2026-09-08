@@ -11,12 +11,13 @@
 namespace otbr {
 namespace rest {
 
-static const std::chrono::seconds kFetchInterval = std::chrono::seconds(15);
+static const std::chrono::seconds kFetchInterval = std::chrono::seconds(10);
 
 // 取得する TLV Type
 static const uint8_t kTlvTypes[] = {
     OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS,   // # Extended Address
     OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS, // # RLOC16
+    OT_NETWORK_DIAGNOSTIC_TLV_CHILD_TABLE,   // # Child Table
     OT_NETWORK_DIAGNOSTIC_TLV_ROUTE,         // # Route
     OT_NETWORK_DIAGNOSTIC_TLV_LEADER_DATA,   // # Leader Data
     OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST, // # IPv6 Address List
@@ -119,10 +120,12 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
     std::string           parsedExtAddr = "";
     std::string           parsedRloc = "";
+    uint16_t              parsedRloc16 = 0;
     std::vector<std::string> parsedIpList;
     uint8_t              parsedRouteIdSequence = 0;
     std::vector<RouteEntry> parsedRouteList;
     LeaderData           parsedLeaderData;
+    std::vector<ChildEntry> parsedChildList;
 
     while (otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv) == OT_ERROR_NONE)
     {
@@ -143,8 +146,40 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
         else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS)
         {
             char buf[7];
-            snprintf(buf, sizeof(buf), "0x%04x", diagTlv.mData.mAddr16);
+            parsedRloc16 = diagTlv.mData.mAddr16;
+            snprintf(buf, sizeof(buf), "0x%04x", parsedRloc16);
             parsedRloc = buf;
+        }
+        // # Child Table
+        // Type 7: Child Table
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_CHILD_TABLE)
+        {
+            enum
+            {
+                kModeRxOnWhenIdle     = 1 << 3,
+                kModeFullThreadDevice = 1 << 1,
+                kModeFullNetworkData  = 1 << 0,
+            };
+
+            parsedChildList.clear();
+
+            for (uint16_t i = 0; i < diagTlv.mData.mChildTable.mCount; i++)
+            {
+                const otNetworkDiagChildEntry &child = diagTlv.mData.mChildTable.mTable[i];
+                ChildEntry entry;
+
+                entry.mChildId          = child.mChildId;
+                entry.mRloc16           = static_cast<uint16_t>((parsedRloc16 & 0xfc00) | child.mChildId);
+                entry.mTimeout          = child.mTimeout;
+                entry.mLinkQuality      = child.mLinkQuality;
+                entry.mRxOnWhenIdle     = child.mMode.mRxOnWhenIdle;
+                entry.mFullThreadDevice = child.mMode.mDeviceType;
+                entry.mFullNetworkData  = child.mMode.mNetworkData;
+                entry.mMode             = (entry.mRxOnWhenIdle ? kModeRxOnWhenIdle : 0) |
+                              (entry.mFullThreadDevice ? kModeFullThreadDevice : 0) |
+                              (entry.mFullNetworkData ? kModeFullNetworkData : 0);
+                parsedChildList.push_back(entry);
+            }
         }
         // # IPv6 Address List
         // Type 8: IPv6 Address List
@@ -200,9 +235,10 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
         mDeviceCache[parsedExtAddr].mRouteIdSequence = parsedRouteIdSequence;
         mDeviceCache[parsedExtAddr].mRouteList = parsedRouteList;
         mDeviceCache[parsedExtAddr].mLeaderData = parsedLeaderData;
-        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s, IPs count = %zu, routes count = %zu, leader router id = %u",
+        mDeviceCache[parsedExtAddr].mChildList = parsedChildList;
+        otbrLogInfo("DiagnosticManager: Cached device RLOC16 = %s, ExtAddr = %s, IPs count = %zu, routes count = %zu, children count = %zu, leader router id = %u",
                     parsedRloc.c_str(), parsedExtAddr.c_str(), parsedIpList.size(), parsedRouteList.size(),
-                    parsedLeaderData.mLeaderRouterId);
+                    parsedChildList.size(), parsedLeaderData.mLeaderRouterId);
     }
 }
 
@@ -300,6 +336,24 @@ std::string DiagnosticManager::GetDiagnosticData(void)
         cJSON_AddNumberToObject(leaderData, "stableDataVersion", it->second.mLeaderData.mStableDataVersion);
         cJSON_AddNumberToObject(leaderData, "leaderRouterId", it->second.mLeaderData.mLeaderRouterId);
 
+        cJSON *children = cJSON_AddArrayToObject(node, "children");
+        for (const ChildEntry &child : it->second.mChildList)
+        {
+            char rloc16[7];
+            cJSON *entry = cJSON_CreateObject();
+
+            snprintf(rloc16, sizeof(rloc16), "0x%04x", child.mRloc16);
+            cJSON_AddNumberToObject(entry, "childId", child.mChildId);
+            cJSON_AddStringToObject(entry, "rloc16", rloc16);
+            cJSON_AddNumberToObject(entry, "timeout", child.mTimeout);
+            cJSON_AddNumberToObject(entry, "linkQuality", child.mLinkQuality);
+            cJSON_AddNumberToObject(entry, "mode", child.mMode);
+            cJSON_AddBoolToObject(entry, "rxOnWhenIdle", child.mRxOnWhenIdle);
+            cJSON_AddBoolToObject(entry, "fullThreadDevice", child.mFullThreadDevice);
+            cJSON_AddBoolToObject(entry, "fullNetworkData", child.mFullNetworkData);
+            cJSON_AddItemToArray(children, entry);
+        }
+
         cJSON_AddItemToArray(nodes, node);
     }
 
@@ -353,6 +407,24 @@ std::string DiagnosticManager::GetNetworkInfo(void)
         cJSON_AddNumberToObject(leaderData, "data-version", device.mLeaderData.mDataVersion);
         cJSON_AddNumberToObject(leaderData, "stable-data-version", device.mLeaderData.mStableDataVersion);
         cJSON_AddNumberToObject(leaderData, "leader-router-id", device.mLeaderData.mLeaderRouterId);
+
+        cJSON *children = cJSON_AddArrayToObject(node, "children");
+        for (const ChildEntry &child : device.mChildList)
+        {
+            char rloc16[7];
+            cJSON *entry = cJSON_CreateObject();
+
+            snprintf(rloc16, sizeof(rloc16), "0x%04x", child.mRloc16);
+            cJSON_AddNumberToObject(entry, "child-id", child.mChildId);
+            cJSON_AddStringToObject(entry, "rloc16", rloc16);
+            cJSON_AddNumberToObject(entry, "timeout", child.mTimeout);
+            cJSON_AddNumberToObject(entry, "link-quality", child.mLinkQuality);
+            cJSON_AddNumberToObject(entry, "mode", child.mMode);
+            cJSON_AddBoolToObject(entry, "rx-on-when-idle", child.mRxOnWhenIdle);
+            cJSON_AddBoolToObject(entry, "full-thread-device", child.mFullThreadDevice);
+            cJSON_AddBoolToObject(entry, "full-network-data", child.mFullNetworkData);
+            cJSON_AddItemToArray(children, entry);
+        }
 
         cJSON *traffic = cJSON_CreateObject();
         cJSON_AddItemToObject(node, "traffic", traffic);

@@ -64,6 +64,18 @@ private:
         uint8_t  mLeaderRouterId    = 0;
     };
 
+    struct ChildEntry
+    {
+        uint16_t mChildId          = 0;
+        uint16_t mRloc16           = 0;
+        uint16_t mTimeout          = 0;
+        uint8_t  mLinkQuality      = 0;
+        uint8_t  mMode             = 0;
+        bool     mRxOnWhenIdle     = false;
+        bool     mFullThreadDevice = false;
+        bool     mFullNetworkData  = false;
+    };
+
     struct DeviceDiagCache
     {
         std::string              mExtAddr;
@@ -72,6 +84,7 @@ private:
         uint8_t                  mRouteIdSequence = 0;
         std::vector<RouteEntry>  mRouteList;
         LeaderData               mLeaderData;
+        std::vector<ChildEntry>  mChildList;
         // key: src-ipv6 (External->Thread) or dst-ipv6 (Thread->External)
         std::map<std::string, TrafficEntry> mExternalToThread;
         std::map<std::string, TrafficEntry> mThreadToExternal;

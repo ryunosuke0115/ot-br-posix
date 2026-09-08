@@ -144,6 +144,8 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
     mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
     mServer.Get(OT_REST_RESOURCE_PATH_NETWORK_INFO, MakeHandler(&RestWebServer::NetworkInfo));
+    // visualizer/ 以下を REST サーバから配信
+    mServer.set_mount_point("/", "/home/maruo/git/ot-br-posix/visualizer");
     mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
 }
 
