@@ -16,6 +16,7 @@ static const std::chrono::seconds kFetchInterval = std::chrono::seconds(10);
 // 取得する TLV Type
 static const uint8_t kTlvTypes[] = {
     OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS,   // # Extended Address
+    OT_NETWORK_DIAGNOSTIC_TLV_EUI64,         // # Factory-assigned EUI-64
     OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS, // # RLOC16
     OT_NETWORK_DIAGNOSTIC_TLV_CHILD_TABLE,   // # Child Table
     OT_NETWORK_DIAGNOSTIC_TLV_ROUTE,         // # Route
@@ -119,6 +120,7 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     otNetworkDiagTlv      diagTlv;
     otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
     std::string           parsedExtAddr = "";
+    std::string           parsedEui64 = "";
     std::string           parsedRloc = "";
     uint16_t              parsedRloc16 = 0;
     std::vector<std::string> parsedIpList;
@@ -140,6 +142,17 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
                      ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], ext[6], ext[7]);
             parsedExtAddr = buf;
             // otbrLogInfo("DiagnosticManager: Parsed ExtAddr: %s", parsedExtAddr.c_str());
+        }
+        // # Factory-assigned EUI-64
+        // Type 23: EUI-64
+        else if (diagTlv.mType == OT_NETWORK_DIAGNOSTIC_TLV_EUI64)
+        {
+            char           buf[17];
+            const uint8_t *eui64 = diagTlv.mData.mEui64.m8;
+
+            snprintf(buf, sizeof(buf), "%02x%02x%02x%02x%02x%02x%02x%02x",
+                     eui64[0], eui64[1], eui64[2], eui64[3], eui64[4], eui64[5], eui64[6], eui64[7]);
+            parsedEui64 = buf;
         }
         // # RLOC16
         // Type 1: RLOC16
@@ -230,6 +243,10 @@ void DiagnosticManager::HandleDiagnosticResponse(const otMessage *aMessage)
     if (!parsedExtAddr.empty())
     {
         mDeviceCache[parsedExtAddr].mExtAddr = parsedExtAddr;
+        if (!parsedEui64.empty())
+        {
+            mDeviceCache[parsedExtAddr].mEui64 = parsedEui64;
+        }
         mDeviceCache[parsedExtAddr].mRloc16 = parsedRloc;
         mDeviceCache[parsedExtAddr].mIp6AddressList = parsedIpList;
         mDeviceCache[parsedExtAddr].mRouteIdSequence = parsedRouteIdSequence;
@@ -377,6 +394,10 @@ std::string DiagnosticManager::GetNetworkInfo(void)
 
         cJSON *node = cJSON_CreateObject();
         cJSON_AddStringToObject(node, "extendedAddress", it->first.c_str());
+        if (!device.mEui64.empty())
+        {
+            cJSON_AddStringToObject(node, "eui64", device.mEui64.c_str());
+        }
         cJSON_AddStringToObject(node, "rloc16", device.mRloc16.c_str());
 
         cJSON *ipList = cJSON_AddArrayToObject(node, "ipv6-lists");

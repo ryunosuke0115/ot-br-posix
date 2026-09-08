@@ -79,6 +79,7 @@ private:
     struct DeviceDiagCache
     {
         std::string              mExtAddr;
+        std::string              mEui64;
         std::string              mRloc16;
         std::vector<std::string> mIp6AddressList;
         uint8_t                  mRouteIdSequence = 0;
