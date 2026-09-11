@@ -26,6 +26,7 @@ public:
 
     std::string GetDiagnosticData(void);
     std::string GetNetworkInfo(void);
+    bool        HasEui64(const std::string &aEui64) const;
 
 private:
     void        FetchDiagnosticData(void);
@@ -44,6 +45,7 @@ private:
         double   mBytesPerSec   = 0.0;
         uint64_t mLastPackets   = 0;
         uint64_t mLastBytes     = 0;
+        bool     mHasPreviousSample = false;
     };
 
     struct RouteEntry

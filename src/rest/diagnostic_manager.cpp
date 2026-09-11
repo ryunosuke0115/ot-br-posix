@@ -5,6 +5,8 @@
 #include <cJSON.h>
 #include "common/logging.hpp"
 #include <arpa/inet.h>
+#include <algorithm>
+#include <cctype>
 #include <inttypes.h>
 #include <openthread/openthread-system.h>
 
@@ -284,10 +286,19 @@ void DiagnosticManager::UpdateTrafficStats(double aElapsedSec)
             TrafficEntry &entry  = device.mExternalToThread[src];
             entry.mPackets       = perDest->mExternalToThread[i].mPackets;
             entry.mBytes         = perDest->mExternalToThread[i].mBytes;
-            entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
-            entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            if (entry.mHasPreviousSample && entry.mPackets >= entry.mLastPackets && entry.mBytes >= entry.mLastBytes)
+            {
+                entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
+                entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            }
+            else
+            {
+                entry.mPacketsPerSec = 0.0;
+                entry.mBytesPerSec   = 0.0;
+            }
             entry.mLastPackets   = entry.mPackets;
             entry.mLastBytes     = entry.mBytes;
+            entry.mHasPreviousSample = true;
         }
 
         // Thread->External: mSrcAddr が Thread デバイスの IP なのでノードの IP と照合
@@ -306,10 +317,19 @@ void DiagnosticManager::UpdateTrafficStats(double aElapsedSec)
             TrafficEntry &entry  = device.mThreadToExternal[dst];
             entry.mPackets       = perDest->mThreadToExternal[i].mPackets;
             entry.mBytes         = perDest->mThreadToExternal[i].mBytes;
-            entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
-            entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            if (entry.mHasPreviousSample && entry.mPackets >= entry.mLastPackets && entry.mBytes >= entry.mLastBytes)
+            {
+                entry.mPacketsPerSec = static_cast<double>(entry.mPackets - entry.mLastPackets) / aElapsedSec;
+                entry.mBytesPerSec   = static_cast<double>(entry.mBytes   - entry.mLastBytes)   / aElapsedSec;
+            }
+            else
+            {
+                entry.mPacketsPerSec = 0.0;
+                entry.mBytesPerSec   = 0.0;
+            }
             entry.mLastPackets   = entry.mPackets;
             entry.mLastBytes     = entry.mBytes;
+            entry.mHasPreviousSample = true;
         }
     }
 }
@@ -488,6 +508,24 @@ std::string DiagnosticManager::GetNetworkInfo(void)
     cJSON_Delete(root);
 
     return result;
+}
+
+bool DiagnosticManager::HasEui64(const std::string &aEui64) const
+{
+    std::string normalized = aEui64;
+
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char aChar) { return static_cast<char>(std::tolower(aChar)); });
+
+    for (const auto &entry : mDeviceCache)
+    {
+        if (entry.second.mEui64 == normalized)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace rest

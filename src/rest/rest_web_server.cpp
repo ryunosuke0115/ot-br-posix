@@ -31,11 +31,13 @@
 
 #include "rest/rest_web_server.hpp"
 
+#include "rest/device_registry.hpp"
 #include "rest/diagnostic_manager.hpp"
 
 #include <chrono>
 
 #include <arpa/inet.h>
+#include <cJSON.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <httplib.h>
@@ -70,6 +72,7 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_PREFIX "/networks/current/prefix"
 #define OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS "/api/traffic-stats"
 #define OT_REST_RESOURCE_PATH_NETWORK_INFO "/api/network-info"
+#define OT_REST_RESOURCE_PATH_DEVICES "/api/devices"
 
 #define OT_REST_ROUTE_TOPOLOGY "/api/topology"
 
@@ -113,6 +116,9 @@ HttpMethod GetMethod(const Request &aRequest)
 RestWebServer::RestWebServer(Host::RcpHost &aHost)
     : mHost(aHost)
 {
+    mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
+    mDeviceRegistry = std::unique_ptr<DeviceRegistry>(new DeviceRegistry(OTBR_DEVICE_METADATA_FILE));
+
     mServer.Get(OT_REST_RESOURCE_PATH_DIAGNOSTICS, MakeHandler(&RestWebServer::Diagnostic));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE, MakeHandler(&RestWebServer::NodeInfo));
     mServer.Delete(OT_REST_RESOURCE_PATH_NODE, MakeHandler(&RestWebServer::NodeInfo));
@@ -144,9 +150,10 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
     mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
     mServer.Get(OT_REST_RESOURCE_PATH_NETWORK_INFO, MakeHandler(&RestWebServer::NetworkInfo));
+    mServer.Get(OT_REST_RESOURCE_PATH_DEVICES, MakeHandler(&RestWebServer::Devices));
+    mServer.Put(R"(/api/devices/([0-9a-fA-F]{16}))", MakeHandler(&RestWebServer::Devices));
     // visualizer/ 以下を REST サーバから配信
-    mServer.set_mount_point("/", "/home/maruo/git/ot-br-posix/visualizer");
-    mDiagnosticManager = std::unique_ptr<DiagnosticManager>(new DiagnosticManager(mHost));
+    mServer.set_mount_point("/", OTBR_REST_VISUALIZER_DIR);
 }
 
 RestWebServer::~RestWebServer(void)
@@ -1093,6 +1100,65 @@ void RestWebServer::NetworkInfo(const Request &aRequest, Response &aResponse) co
 
     aResponse.status = StatusCode::OK_200;
     aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON);
+}
+
+void RestWebServer::Devices(const Request &aRequest, Response &aResponse)
+{
+    if (!mDeviceRegistry->IsHealthy())
+    {
+        ErrorHandler(aResponse, StatusCode::InternalServerError_500);
+        return;
+    }
+
+    if (GetMethod(aRequest) == HttpMethod::kGet)
+    {
+        aResponse.status = StatusCode::OK_200;
+        aResponse.set_content(mDeviceRegistry->GetDevicesJson(), OT_REST_CONTENT_TYPE_JSON);
+        return;
+    }
+
+    if (GetMethod(aRequest) != HttpMethod::kPut || aRequest.matches.size() != 2)
+    {
+        ErrorHandler(aResponse, StatusCode::BadRequest_400);
+        return;
+    }
+
+    const std::string eui64 = DeviceRegistry::NormalizeEui64(aRequest.matches[1].str());
+    cJSON            *root  = cJSON_Parse(aRequest.body.c_str());
+    cJSON            *name  = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "name");
+    cJSON            *location = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "location");
+    cJSON            *type = root == nullptr ? nullptr : cJSON_GetObjectItemCaseSensitive(root, "type");
+
+    if (root == nullptr || !cJSON_IsObject(root) || !cJSON_IsString(name) || name->valuestring == nullptr ||
+        name->valuestring[0] == '\0' || (location != nullptr && (!cJSON_IsString(location) || location->valuestring == nullptr)) ||
+        (type != nullptr && (!cJSON_IsString(type) || type->valuestring == nullptr)) ||
+        !mDiagnosticManager->HasEui64(eui64))
+    {
+        if (root != nullptr)
+        {
+            cJSON_Delete(root);
+        }
+        ErrorHandler(aResponse, StatusCode::BadRequest_400);
+        return;
+    }
+
+    DeviceMetadata device;
+    device.mEui64    = eui64;
+    device.mName     = name->valuestring;
+    device.mLocation = location == nullptr ? "" : location->valuestring;
+    device.mType     = type == nullptr ? "" : type->valuestring;
+    cJSON_Delete(root);
+
+    std::string error;
+    if (!mDeviceRegistry->Update(device, error))
+    {
+        otbrLogWarning("Failed to save device metadata: %s", error.c_str());
+        ErrorHandler(aResponse, StatusCode::InternalServerError_500);
+        return;
+    }
+
+    aResponse.status = StatusCode::OK_200;
+    aResponse.set_content(mDeviceRegistry->GetDeviceJson(eui64), OT_REST_CONTENT_TYPE_JSON);
 }
 
 void RestWebServer::DeleteOutDatedDiagnostic(void)

@@ -28,8 +28,19 @@
 
 add_library(otbr-rest
     rest_web_server.cpp
+    device_registry.cpp
     json.cpp
     diagnostic_manager.cpp
+)
+
+set(OTBR_DEVICE_METADATA_FILE "${PROJECT_SOURCE_DIR}/device-metadata.json" CACHE FILEPATH
+    "Path to the Router device metadata JSON file")
+set(OTBR_REST_VISUALIZER_DIR "${PROJECT_SOURCE_DIR}/visualizer" CACHE PATH
+    "Directory served by the OTBR REST visualizer")
+
+target_compile_definitions(otbr-rest PRIVATE
+    OTBR_DEVICE_METADATA_FILE="${OTBR_DEVICE_METADATA_FILE}"
+    OTBR_REST_VISUALIZER_DIR="${OTBR_REST_VISUALIZER_DIR}"
 )
 
 target_include_directories(otbr-rest PUBLIC
