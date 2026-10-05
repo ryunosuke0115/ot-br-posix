@@ -74,8 +74,6 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_INFO "/api/network-info"
 #define OT_REST_RESOURCE_PATH_DEVICES "/api/devices"
 
-#define OT_REST_ROUTE_TOPOLOGY "/api/topology"
-
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
@@ -148,7 +146,6 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Options(OT_REST_RESOURCE_PATH_NODE_COMMISSIONER_JOINER, MakeHandler(&RestWebServer::CommissionerJoiner));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_COPROCESSOR_VERSION, MakeHandler(&RestWebServer::CoprocessorVersion));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
-    mServer.Get(OT_REST_ROUTE_TOPOLOGY, MakeHandler(&RestWebServer::ApiTopologyHandler));
     mServer.Get(OT_REST_RESOURCE_PATH_NETWORK_INFO, MakeHandler(&RestWebServer::NetworkInfo));
     mServer.Get(OT_REST_RESOURCE_PATH_DEVICES, MakeHandler(&RestWebServer::Devices));
     mServer.Put(R"(/api/devices/([0-9a-fA-F]{16}))", MakeHandler(&RestWebServer::Devices));
@@ -1075,21 +1072,6 @@ void RestWebServer::TrafficStats(const Request &aRequest, Response &aResponse) c
 
     aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON);
     aResponse.status = StatusCode::OK_200;
-}
-
-void RestWebServer::ApiTopologyHandler(const Request &aRequest, Response &aResponse) const
-{
-    OT_UNUSED_VARIABLE(aRequest);
-
-    // 1. 最新情報の収集リクエストを投げる (キャッシュの更新)
-    // 注意: otThreadSendDiagnosticGet は非同期なので、
-    // ここで呼ぶか、バックグラウンドで定期実行するかは運用次第です。
-    // mDiagnosticManager->UpdateCache();
-
-    std::string body = mDiagnosticManager->GetDiagnosticData();
-
-    aResponse.status = StatusCode::OK_200; //
-    aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON); //
 }
 
 void RestWebServer::NetworkInfo(const Request &aRequest, Response &aResponse) const

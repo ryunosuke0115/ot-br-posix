@@ -24,7 +24,6 @@ public:
     void Update(MainloopContext &aMainloop) override;
     void Process(const MainloopContext &aMainloop) override;
 
-    std::string GetDiagnosticData(void);
     std::string GetNetworkInfo(void);
     bool        HasEui64(const std::string &aEui64) const;
 

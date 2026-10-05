@@ -135,7 +135,6 @@ private:
     void RemoveJoiner(const Request &aRequest, Response &aResponse) const;
     void GetCoprocessorVersion(Response &aResponse) const;
     void TrafficStats(const Request &aRequest, Response &aResponse) const;
-    void ApiTopologyHandler(const Request &aRequest, Response &aResponse) const;
     void NetworkInfo(const Request &aRequest, Response &aResponse) const;
     void Devices(const Request &aRequest, Response &aResponse);
 
