@@ -136,7 +136,7 @@ private:
     void GetCoprocessorVersion(Response &aResponse) const;
     void TrafficStats(const Request &aRequest, Response &aResponse) const;
     void NetworkInfo(const Request &aRequest, Response &aResponse) const;
-    void Devices(const Request &aRequest, Response &aResponse);
+    void DeviceMetadataHandler(const Request &aRequest, Response &aResponse);
 
     void DeleteOutDatedDiagnostic(void);
     void UpdateDiag(std::string aKey, std::vector<otNetworkDiagTlv> &aDiag);

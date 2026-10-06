@@ -72,7 +72,7 @@
 #define OT_REST_RESOURCE_PATH_NETWORK_CURRENT_PREFIX "/networks/current/prefix"
 #define OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS "/api/traffic-stats"
 #define OT_REST_RESOURCE_PATH_NETWORK_INFO "/api/network-info"
-#define OT_REST_RESOURCE_PATH_DEVICES "/api/devices"
+#define OT_REST_RESOURCE_PATH_DEVICE_METADATA "/api/device-metadata"
 
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
@@ -147,8 +147,8 @@ RestWebServer::RestWebServer(Host::RcpHost &aHost)
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_COPROCESSOR_VERSION, MakeHandler(&RestWebServer::CoprocessorVersion));
     mServer.Get(OT_REST_RESOURCE_PATH_NODE_TRAFFIC_STATS, MakeHandler(&RestWebServer::TrafficStats));
     mServer.Get(OT_REST_RESOURCE_PATH_NETWORK_INFO, MakeHandler(&RestWebServer::NetworkInfo));
-    mServer.Get(OT_REST_RESOURCE_PATH_DEVICES, MakeHandler(&RestWebServer::Devices));
-    mServer.Put(R"(/api/devices/([0-9a-fA-F]{16}))", MakeHandler(&RestWebServer::Devices));
+    mServer.Get(OT_REST_RESOURCE_PATH_DEVICE_METADATA, MakeHandler(&RestWebServer::DeviceMetadataHandler));
+    mServer.Put(R"(/api/device-metadata/([0-9a-fA-F]{16}))", MakeHandler(&RestWebServer::DeviceMetadataHandler));
     // visualizer/ 以下を REST サーバから配信
     mServer.set_mount_point("/", OTBR_REST_VISUALIZER_DIR);
 }
@@ -1084,7 +1084,7 @@ void RestWebServer::NetworkInfo(const Request &aRequest, Response &aResponse) co
     aResponse.set_content(body, OT_REST_CONTENT_TYPE_JSON);
 }
 
-void RestWebServer::Devices(const Request &aRequest, Response &aResponse)
+void RestWebServer::DeviceMetadataHandler(const Request &aRequest, Response &aResponse)
 {
     if (!mDeviceRegistry->IsHealthy())
     {
