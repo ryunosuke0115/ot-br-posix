@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thread Border Router - トラフィック監視</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+<div class="app">
+
+  <header>
+    <div class="title">
+      <span>Thread Border Router</span>
+    </div>
+
+    <div class="status">
+      <span id="conn-status">
+        <span class="dot" id="conn-dot"></span>
+        <span id="conn-text">接続中…</span>
+      </span>
+      <span id="last-updated"></span>
+    </div>
+  </header>
+
+  <main>
+
+    <div class="graph-pane">
+      <svg id="graph"></svg>
+
+      <div class="legend">
+        <div class="legend-item">
+          <span
+            class="legend-swatch"
+            style="background:#fff;border:1.5px solid var(--border-strong);">
+          </span>
+          通信なし
+        </div>
+
+        <div class="legend-item">
+          <span
+            class="legend-swatch"
+            style="background:#fff;border:2px solid var(--accent-coral);">
+          </span>
+          外部通信あり
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-pane" id="detail-pane">
+      <p class="detail-empty">
+        ノードをクリックすると<br>
+        トラフィック詳細を表示します
+      </p>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
